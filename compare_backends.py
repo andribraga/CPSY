@@ -9,43 +9,18 @@ import sys
 import time
 from statistics import mean, stdev
 
-from gpiozero import Device, Motor, RotaryEncoder
+from gpiozero import Motor
 
-from kernel_encoder import delta, open_encoder, read_steps
+from encoders import delta, setup
 
 SPEEDS = [0.3, 0.6, 1.0]
 TRIALS = 5
 RUN_TIME = 3      # seconds the motors are on
 COAST_TIME = 1.5  # wait for the wheels to stop before reading
 
-backend = sys.argv[1] if len(sys.argv) > 1 else "lgpio"
-try:
-    if backend == "pigpio":
-        from gpiozero.pins.pigpio import PiGPIOFactory
-        Device.pin_factory = PiGPIOFactory()
-    elif backend in ("lgpio", "kernel"):  # kernel: lgpio drives the motors only
-        from gpiozero.pins.lgpio import LGPIOFactory
-        Device.pin_factory = LGPIOFactory()
-    else:
-        sys.exit("Usage: uv run compare_backends.py lgpio|pigpio|kernel")
-except ImportError as e:
-    sys.exit(f"{backend} Python package missing ({e}). Try: uv add {backend}")
-except OSError as e:
-    sys.exit(f"Can't use {backend}: {e}. For pigpio, start the daemon: sudo pigpiod")
-
-
-print("Backend:", backend if backend == "kernel" else type(Device.pin_factory).__name__)
-
+read_b, read_a = setup(sys.argv[1] if len(sys.argv) > 1 else "lgpio")  # sets pin factory first
 right = Motor(forward=20, backward=16)
 left = Motor(forward=19, backward=26)
-
-if backend == "kernel":
-    fb, fa = open_encoder("rotary@6"), open_encoder("rotary@12")
-    read_b, read_a = (lambda: read_steps(fb)), (lambda: read_steps(fa))
-else:
-    motb = RotaryEncoder(a=6, b=13, max_steps=0)
-    mota = RotaryEncoder(a=18, b=12, max_steps=0)
-    read_b, read_a = (lambda: motb.steps), (lambda: mota.steps)
 
 print(f"{'speed':>5} | {'MOTB avg':>8} {'±':>4} | {'MOTA avg':>8} {'±':>4} | raw counts")
 try:
