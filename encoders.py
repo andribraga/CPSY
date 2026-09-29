@@ -58,6 +58,30 @@ def setup(backend):
     return (lambda: motb.steps), (lambda: mota.steps)
 
 
+def report_per_turn(counts, expected=700, tolerance=0.05, default_turns=None):
+    """Ask how many turns each wheel made, print counts per turn vs expected. Returns True if all pass.
+    tolerance 5%: a quarter turn off over 10 turns is 2.5%."""
+    all_ok = True
+    for name, n in counts.items():
+        hint = f" [{default_turns:g}]" if default_turns else ""
+        while True:
+            answer = input(f"How many full turns did {name} make?{hint} ") or (str(default_turns) if default_turns else "")
+            try:
+                turns = float(answer)
+                if turns > 0:
+                    break
+            except ValueError:
+                pass
+            print("  Enter a number above 0, e.g. 3 or 3.25")
+        per_turn = n / turns
+        err = (per_turn - expected) / expected
+        ok = abs(err) <= tolerance
+        all_ok &= ok
+        print(f"  {name}: {n} counts / {turns:g} turns = {per_turn:.0f} per turn "
+              f"({err:+.1%} vs {expected}) {'PASS' if ok else 'FAIL'}")
+    return all_ok
+
+
 if __name__ == "__main__":
     assert delta(5, 700) == 695
     assert delta(700, 5) == 695
