@@ -11,12 +11,12 @@ from statistics import mean, stdev
 
 from gpiozero import Device, Motor, RotaryEncoder
 
+from kernel_encoder import delta, open_encoder, read_steps
+
 SPEEDS = [0.3, 0.6, 1.0]
 TRIALS = 5
 RUN_TIME = 3      # seconds the motors are on
 COAST_TIME = 1.5  # wait for the wheels to stop before reading
-ROLLOVER = 100000  # must match steps= in config.txt (kernel counter wraps here)
-EVIOCGABS_X = 0x80184540  # ioctl: read ABS_X (struct input_absinfo, 6 x int32)
 
 backend = sys.argv[1] if len(sys.argv) > 1 else "lgpio"
 try:
@@ -34,34 +34,14 @@ except OSError as e:
     sys.exit(f"Can't use {backend}: {e}. For pigpio, start the daemon: sudo pigpiod")
 
 
-def kernel_encoder(name):
-    import glob
-    for p in glob.glob("/sys/class/input/event*/device/name"):
-        with open(p) as f:
-            if f.read().strip() == name:
-                return open("/dev/input/" + p.split("/")[4], "rb")
-    sys.exit(f"No input device '{name}'. Check: cat /sys/class/input/event*/device/name")
-
-
-def kernel_steps(f):
-    import fcntl
-    import struct
-    return struct.unpack("6i", fcntl.ioctl(f, EVIOCGABS_X, bytes(24)))[0]
-
-
-def delta(before, after):
-    d = (after - before) % ROLLOVER
-    return min(d, ROLLOVER - d)  # distance either way, handles the kernel wrap
-
-
 print("Backend:", backend if backend == "kernel" else type(Device.pin_factory).__name__)
 
 right = Motor(forward=20, backward=16)
 left = Motor(forward=19, backward=26)
 
 if backend == "kernel":
-    fb, fa = kernel_encoder("rotary@6"), kernel_encoder("rotary@12")
-    read_b, read_a = (lambda: kernel_steps(fb)), (lambda: kernel_steps(fa))
+    fb, fa = open_encoder("rotary@6"), open_encoder("rotary@12")
+    read_b, read_a = (lambda: read_steps(fb)), (lambda: read_steps(fa))
 else:
     motb = RotaryEncoder(a=6, b=13, max_steps=0)
     mota = RotaryEncoder(a=18, b=12, max_steps=0)
