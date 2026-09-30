@@ -15,14 +15,14 @@ from gpiozero import Motor
 from simple_pid import PID
 
 # ---- settings ----
-TARGET_RPM = 70
+TARGET_RPM = 50
 RUN_TIME = 5          # seconds
 DT = 0.05             # loop period (50 ms)
-STEPS_PER_REV = 700
+STEPS_PER_REV = 694
 STEPS = 100000        # same as steps= in config.txt
 
-motor = Motor(forward=20, backward=16)   # right motor
-ENCODER_NAME = "rotary@12"               # change to "rotary@6" if it's the other wheel
+motor = Motor(forward=19, backward=26)   # left motor
+ENCODER_NAME = "rotary@6"               # change to "rotary@6" if it's the other wheel
 
 # ---- gains from the command line ----
 kp, ki, kd = (float(x) for x in sys.argv[1:4]) if len(sys.argv) == 4 else (0.005, 0, 0)
