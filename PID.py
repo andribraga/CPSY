@@ -15,7 +15,7 @@ from gpiozero import Motor
 from simple_pid import PID
 
 # ---- settings ----
-TARGET_RPM = 30
+TARGET_RPM = 70
 RUN_TIME = 5          # seconds
 DT = 0.05             # loop period (50 ms)
 STEPS_PER_REV = 700
