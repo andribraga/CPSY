@@ -21,7 +21,8 @@ DT = 0.05             # loop period (50 ms)
 STEPS_PER_REV = 694
 STEPS = 100000        # same as steps= in config.txt
 
-motor = Motor(forward=19, backward=26)   # left motor
+left = Motor(forward=19, backward=26)   # left motor (PID-controlled)
+right = Motor(forward=20, backward=16)  # copies the left pwm
 slp = DigitalOutputDevice(5, initial_value=True)  # wake the motor driver
 ENCODER_NAME = "rotary@6"               # change to "rotary@6" if it's the other wheel
 
@@ -65,12 +66,14 @@ try:
         last_time, last_pos = now, pos
 
         pwm = pid(rpm, dt=dt)
-        motor.forward(pwm)
+        left.forward(pwm)
+        right.forward(pwm)
 
         t = now - start
         print(f"t={t:4.2f}  rpm={rpm:5.1f}  pwm={pwm:.2f}")
         log.write(f"{t:.3f},{rpm:.2f},{pwm:.3f}\n")
 finally:
-    motor.stop()
+    left.stop()
+    right.stop()
     log.close()
     print(f"\nKp={kp} Ki={ki} Kd={kd}  -> saved pid_log.csv")
