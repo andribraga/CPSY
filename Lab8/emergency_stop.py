@@ -1,7 +1,7 @@
-"""Drive forward until the wall is within 50 cm, then pull SLP (GPIO5) low to stop.
-Passes if the robot comes to rest between 30 and 50 cm.
+"""Drive forward forever. When the wall/obstacle is within 50 cm, pull SLP (GPIO5) low to stop;
+when it's gone, SLP goes high again and the robot drives on. Ctrl+C to quit.
     uv run Lab8/emergency_stop.py 0.3     # speed (0-1)
-Start more than 50 cm from the wall (sensor reads wrong under 10 cm)."""
+Start more than 50 cm from any obstacle (sensor reads wrong under 10 cm)."""
 import sys
 import time
 
@@ -12,7 +12,7 @@ from adafruit_mcp3xxx.analog_in import AnalogIn
 from adafruit_mcp3xxx.mcp3008 import MCP3008
 from gpiozero import DigitalOutputDevice, Motor
 
-FAR_V, NEAR_V = 1.16, 1.8  # 50 cm, 30 cm; voltage rises as the wall gets closer
+FAR_V = 1.16  # 50 cm; voltage rises as the obstacle gets closer (1.8 V = 30 cm)
 
 speed = float(sys.argv[1]) if len(sys.argv) > 1 else 0.3
 if not 0 < speed <= 1:
@@ -24,23 +24,21 @@ slp = DigitalOutputDevice(5)  # high = motor driver awake
 right = Motor(forward=20, backward=16)
 left = Motor(forward=19, backward=26)
 
-input(f"Speed {speed}. Place robot >50 cm from the wall, press Enter to start...")
+input(f"Speed {speed}. Place robot >50 cm from obstacles, press Enter to start (Ctrl+C to quit)...")
 try:
-    slp.on()
     left.backward(speed)  # backward = robot forward, same as motor_turns.py
     right.backward(speed)
-    while (v := sensor.voltage) < FAR_V:
-        print(f"{v:.3f} V")
+    # ponytail: no hysteresis; add a lower resume voltage if it stutters at the 50 cm edge
+    while True:
+        v = sensor.voltage
+        clear = v < FAR_V
+        if clear != slp.value:
+            slp.value = clear  # SLP low = emergency stop, high = drive on
+            print(f"{v:.3f} V -> {'DRIVE' if clear else 'STOP'}")
         time.sleep(0.02)
-    slp.off()  # emergency stop: put the driver to sleep
-    print(f"SLP low at {v:.3f} V")
-    time.sleep(0.5)  # let it roll to a stop
-    v = sensor.voltage
+except KeyboardInterrupt:
+    pass
 finally:
     slp.off()
     left.stop()
     right.stop()
-
-ok = FAR_V <= v <= NEAR_V
-print(f"Stopped at {v:.3f} V -> {'PASS' if ok else 'FAIL'} (30-50 cm = {FAR_V}-{NEAR_V} V)")
-sys.exit(0 if ok else 1)
