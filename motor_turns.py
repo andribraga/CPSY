@@ -6,7 +6,7 @@ Low speed is easier to count (0.3 ~ 3 turns in 5 s). Try a higher speed to see w
 import sys
 import time
 
-from gpiozero import Motor
+from gpiozero import DigitalOutputDevice, Motor
 
 from encoders import delta, report_per_turn, setup
 
@@ -21,6 +21,7 @@ if not 0 < speed <= 1:
 read_b, read_a = setup(backend)  # sets pin factory before the motors are created
 right = Motor(forward=20, backward=16)
 left = Motor(forward=19, backward=26)
+slp = DigitalOutputDevice(5, initial_value=True)  # wake the motor driver
 
 input(f"Speed {speed}, {RUN_TIME} s. Lift the robot, press Enter to start...")
 for i in (3, 2, 1):

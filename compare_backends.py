@@ -9,7 +9,7 @@ import sys
 import time
 from statistics import mean, stdev
 
-from gpiozero import Motor
+from gpiozero import DigitalOutputDevice, Motor
 
 from encoders import delta, setup
 
@@ -21,6 +21,7 @@ COAST_TIME = 1.5  # wait for the wheels to stop before reading
 read_b, read_a = setup(sys.argv[1] if len(sys.argv) > 1 else "lgpio")  # sets pin factory first
 right = Motor(forward=20, backward=16)
 left = Motor(forward=19, backward=26)
+slp = DigitalOutputDevice(5, initial_value=True)  # wake the motor driver
 
 print(f"{'speed':>5} | {'MOTB avg':>8} {'±':>4} | {'MOTA avg':>8} {'±':>4} | raw counts")
 try:

@@ -11,7 +11,7 @@ import sys
 import time
 import evdev
 from evdev import ecodes
-from gpiozero import Motor
+from gpiozero import DigitalOutputDevice, Motor
 from simple_pid import PID
 
 # ---- settings ----
@@ -22,6 +22,7 @@ STEPS_PER_REV = 694
 STEPS = 100000        # same as steps= in config.txt
 
 motor = Motor(forward=19, backward=26)   # left motor
+slp = DigitalOutputDevice(5, initial_value=True)  # wake the motor driver
 ENCODER_NAME = "rotary@6"               # change to "rotary@6" if it's the other wheel
 
 # ---- gains from the command line ----
