@@ -21,7 +21,7 @@ from gpiozero import DigitalOutputDevice, Motor
 from simple_pid import PID
 
 # ---- settings ----
-KP, KI, KD = 0.015, 0.05, 0
+KP, KI, KD = 0.005, 0.02, 0  # lowered from 0.015/0.05: less wobble at low rpm
 DT = 0.05             # loop period (50 ms)
 STEPS_PER_REV = 694   # measured: 6940 ticks / 10 turns (both wheels)
 STEPS = 100000        # same as steps= in config.txt
