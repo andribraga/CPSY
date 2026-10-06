@@ -60,9 +60,9 @@ class Wheel:
         rpm = abs(d) / STEPS_PER_REV / dt * 60
         pwm = self.pid(rpm, dt=dt)
         if self.forward:
-            self.motor.backward(pwm)  # backward = robot forward on this robot
-        else:
             self.motor.forward(pwm)
+        else:
+            self.motor.backward(pwm)
         return rpm, pwm
 
 

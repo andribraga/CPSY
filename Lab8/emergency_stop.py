@@ -22,8 +22,8 @@ left = Motor(forward=19, backward=26)
 
 input(f"Speed {speed}. Place robot >50 cm from obstacles, press Enter to start (Ctrl+C to quit)...")
 try:
-    left.backward(speed)  # backward = robot forward, same as motor_turns.py
-    right.backward(speed)
+    left.forward(speed)
+    right.forward(speed)
     while True:
         v = voltage()
         in_band = BAND_LO_V <= v <= BAND_HI_V  # obstacle 30-50 cm away
