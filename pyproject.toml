@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "adafruit-circuitpython-mcp3xxx>=1.5.2",
+    "adafruit-circuitpython-tcs34725>=3.3.29",
     "gpiozero>=2.0.1.post3",
     "pigpio>=1.78",
     "simple-pid>=2.0.1",
