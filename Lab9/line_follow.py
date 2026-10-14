@@ -28,7 +28,7 @@ KIS_40 = 0.008    # rpm of steering per (count*s) of error, tuned at base 40
 KDS = 0.0003      # D made it wobble (sensor jumps ~3000/sample), keep 0
 SETPOINT = 2000   # midpoint of white (~3700) and line (~300)
 SLOW_ERR = 1500   # error at which speed would hit 0 (before the CORNER_RPM floor); 3000 wobbled in the M (corners too fast)
-SLOW_DEAD = 600   # errors below this don't slow down (straight wobble is ~±430, it kept the straights at ~85 rpm); 0 = off
+SLOW_DEAD = 800   # errors below this don't slow down (straight wobble is ~±430, it kept the straights at ~85 rpm); 0 = off
 CORNER_RPM = 50   # floor speed in curves, in rpm (not % of BASE_RPM): the M takes ~half the lap at this speed; 40 held, back to 40 if it loses a corner
 SLOW_RECOVER = 100 # speed climbs back at most this many rpm per second (stops 40<->95 rpm surging in corners); 99999 = off
 SLOW_DROP = 99999 # speed falls at most this many rpm per second; 400 lost the first M corner at 150 (entered at ~130, crossed the line in 0.1 s); 99999 = off
