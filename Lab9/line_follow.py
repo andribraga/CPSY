@@ -3,7 +3,7 @@ Line follower: edge following with the color sensor + PID speed control per whee
 Setpoint is a parameter, white area on the RIGHT side of the rover.
 
 Usage: python line_follow.py BASE_RPM [SECONDS [KS [SETPOINT [KIS]]]]
-KS and KIS default to the 40 rpm tune scaled by (BASE_RPM/40)**0.6.
+KS defaults to the 40 rpm tune scaled by (BASE_RPM/40)**0.6, KIS by (BASE_RPM/40)**0.5.
 """
 
 import os
@@ -18,7 +18,8 @@ from simple_pid import PID
 
 # ---- settings ----
 KP, KI, KD = 0.01, 0.02, 0   # wheel speed PID (best from tuning/)
-DT = 0.02         # sensor runs continuously (new value every 24 ms), so the loop is ~0.025 s
+INTEGRATION_MS = 24  # sensor window; 12 halves sensor delay (keep gain 4: 12 ms saturates at 5120 counts)
+DT = 0.02 * INTEGRATION_MS / 24   # loop sleep follows the sensor: ~0.025 s loop at 24 ms, ~0.013 s at 12 ms
 STEPS_PER_REV = 694
 STEPS = 100000
 EDGE = -1         # white on the right: too much white -> steer left (flip to 1 if it steers away)
@@ -28,8 +29,9 @@ KDS = 0           # D made it wobble (sensor jumps ~3000/sample), keep 0
 SETPOINT = 2000   # midpoint of white (~3700) and line (~300)
 SLOW_ERR = 3000   # error at which speed would hit 0 (before the SLOW_MIN floor)
 SLOW_MIN = 0.4    # never go below 40% of BASE_RPM in curves
+SLOW_TURN = 0.5   # steering of SLOW_TURN * BASE_RPM gives the minimum speed (keeps it slow for the whole curve)
 MAX_RPM = 220     # motors top out ~225-230 rpm at full duty (tuning/L300_R300)
-RESET_ERR = 1200  # clear the steering I term when it fights an error bigger than this (c < 800 or > 3200); 99999 = off
+RESET_ERR = 500   # clear the steering I term when it fights an error bigger than this (c < 1500 or > 2500); 99999 = off
 BRAKE_MARGIN = 20 # brake only if a wheel is this many rpm above target (rpm noise is ~±9); 9999 = off
 
 if len(sys.argv) < 2:
@@ -38,9 +40,8 @@ base_rpm = float(sys.argv[1])
 run_time = float(sys.argv[2]) if len(sys.argv) > 2 else 10
 # steering grows slower than speed: the sensor-to-wheel delay costs more at speed
 # (linear scaling overshot at 100; 0.0095 at 100 vs 0.0055 at 40 fits ^0.6)
-scale = (base_rpm / 40) ** 0.6
-KS = KS_40 * scale
-KIS = KIS_40 * scale
+KS = KS_40 * (base_rpm / 40) ** 0.6
+KIS = KIS_40 * (base_rpm / 40) ** 0.5   # I kept steering past the edge at 100, so it grows slower than P
 if len(sys.argv) > 3:
     KS = float(sys.argv[3])
 if len(sys.argv) > 4:
@@ -49,10 +50,12 @@ if len(sys.argv) > 5:
     KIS = float(sys.argv[5])
 
 sensor = adafruit_tcs34725.TCS34725(board.I2C())
-sensor.integration_time = 24
+sensor.integration_time = INTEGRATION_MS
 sensor.gain = 4
 # keep it integrating; otherwise every color_raw powers it on and waits ~2 cycles (~45 ms)
 sensor.active = True
+# scale counts back to 24 ms so SETPOINT, KS, KIS, RESET_ERR, SLOW_ERR stay valid at any integration time
+C_SCALE = 24 / sensor.integration_time
 
 input("Put the rover at the start, press Enter to drive")
 
@@ -102,13 +105,14 @@ steer_pid = PID(KS, KIS, KDS, setpoint=SETPOINT)
 steer_pid.output_limits = (-base_rpm, base_rpm)   # keep both wheels >= 0, also caps the integral
 
 os.makedirs("follow", exist_ok=True)
-log_path = f"follow/base{base_rpm:g}_ks{KS:g}_sp{SETPOINT:g}_kis{KIS:g}_brake.csv"
+log_path = f"follow/base{base_rpm:g}_ks{KS:.3g}_sp{SETPOINT:g}_kis{KIS:.3g}_it{INTEGRATION_MS:g}_turn.csv"
 log = open(log_path, "w")
-log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g}\n")
-log.write("time,c,error,left_target,left_rpm,right_target,right_rpm,base,left_out,right_out,i_reset\n")
+log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g} integration_ms={INTEGRATION_MS:g}\n")
+log.write("time,c,error,left_target,left_rpm,right_target,right_rpm,base,left_out,right_out,i_reset,steer\n")
 
 start = time.monotonic()
 last_time = start
+steer = 0.0
 
 try:
     while time.monotonic() - start < run_time:
@@ -117,10 +121,12 @@ try:
         dt = now - last_time
         last_time = now
 
-        c = sensor.color_raw[3]
+        c = round(sensor.color_raw[3] * C_SCALE)
         error = c - SETPOINT                       # > 0: too much white
-        # slow down when far from the edge (sharp curve / overshoot), full speed when on it
-        base = base_rpm * max(SLOW_MIN, 1 - abs(error) / SLOW_ERR)
+        # slow down while turning hard (last steer includes I, so it stays slow through the whole curve,
+        # also when c passes the setpoint mid-curve) or when far off the edge (overshoot)
+        slow = min(1 - abs(steer) / (SLOW_TURN * base_rpm), 1 - abs(error) / SLOW_ERR)
+        base = base_rpm * max(SLOW_MIN, slow)
         steer_pid.output_limits = (-base, base)    # keep both wheels >= 0
         # I term is stored as KIS * (SETPOINT - c), so i * error > 0 means it steers against the sensor
         _, i_term, _ = steer_pid.components
@@ -139,7 +145,7 @@ try:
         l_rpm, l_out = left.update(dt, l_target)
         r_rpm, r_out = right.update(dt, r_target)
         log.write(f"{now - start:.3f},{c},{error:.0f},{l_target:.1f},{l_rpm:.1f},"
-                  f"{r_target:.1f},{r_rpm:.1f},{base:.1f},{l_out:.3f},{r_out:.3f},{int(i_reset)}\n")
+                  f"{r_target:.1f},{r_rpm:.1f},{base:.1f},{l_out:.3f},{r_out:.3f},{int(i_reset)},{steer:.1f}\n")
 finally:
     left.motor.stop()
     right.motor.stop()
