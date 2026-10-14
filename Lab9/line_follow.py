@@ -29,6 +29,7 @@ SETPOINT = 2000   # midpoint of white (~3700) and line (~300)
 SLOW_ERR = 3000   # error at which speed would hit 0 (before the SLOW_MIN floor)
 SLOW_MIN = 0.4    # never go below 40% of BASE_RPM in curves
 MAX_RPM = 220     # motors top out ~225-230 rpm at full duty (tuning/L300_R300)
+RESET_ERR = 1200  # clear the steering I term when it fights an error bigger than this (c < 800 or > 3200)
 
 if len(sys.argv) < 2:
     sys.exit("Usage: line_follow.py BASE_RPM [SECONDS [KS [SETPOINT [KIS]]]]")
@@ -61,7 +62,7 @@ class Wheel:
         self.motor = motor
         self.enc = devices[encoder_name]
         self.pid = PID(KP, KI, KD, setpoint=0)
-        self.pid.output_limits = (0, 1)
+        self.pid.output_limits = (-1, 1)   # < 0 = brake
         self.last_pos = self.position()
 
     def position(self):
@@ -77,8 +78,15 @@ class Wheel:
             d += STEPS
         self.last_pos = pos
         rpm = abs(d) / STEPS_PER_REV / dt * 60
-        self.motor.forward(self.pid(rpm, dt=dt))
-        return rpm
+        out = self.pid(rpm, dt=dt)
+        if out >= 0:
+            self.motor.forward(out)
+        else:
+            # wheel too fast: DRV8833 short brake (IN1 = IN2 = high); coasting at 0 duty is too slow
+            # ponytail: on/off brake, make it proportional if it chatters
+            self.motor.forward_device.on()
+            self.motor.backward_device.on()
+        return rpm, out
 
 
 left = Wheel(Motor(forward=19, backward=26), "rotary@6")
@@ -90,10 +98,10 @@ steer_pid = PID(KS, KIS, KDS, setpoint=SETPOINT)
 steer_pid.output_limits = (-base_rpm, base_rpm)   # keep both wheels >= 0, also caps the integral
 
 os.makedirs("follow", exist_ok=True)
-log_path = f"follow/base{base_rpm:g}_ks{KS:g}_sp{SETPOINT:g}_kis{KIS:g}_fast.csv"
+log_path = f"follow/base{base_rpm:g}_ks{KS:g}_sp{SETPOINT:g}_kis{KIS:g}_brake.csv"
 log = open(log_path, "w")
 log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g}\n")
-log.write("time,c,error,left_target,left_rpm,right_target,right_rpm,base\n")
+log.write("time,c,error,left_target,left_rpm,right_target,right_rpm,base,left_out,right_out,i_reset\n")
 
 start = time.monotonic()
 last_time = start
@@ -110,6 +118,11 @@ try:
         # slow down when far from the edge (sharp curve / overshoot), full speed when on it
         base = base_rpm * max(SLOW_MIN, 1 - abs(error) / SLOW_ERR)
         steer_pid.output_limits = (-base, base)    # keep both wheels >= 0
+        # I term is stored as KIS * (SETPOINT - c), so i * error > 0 means it steers against the sensor
+        _, i_term, _ = steer_pid.components
+        i_reset = abs(error) > RESET_ERR and i_term * error > 0
+        if i_reset:
+            steer_pid.reset()
         steer = -EDGE * steer_pid(c, dt=dt)
         l_target = base + steer
         r_target = base - steer
@@ -119,10 +132,10 @@ try:
             l_target -= excess
             r_target -= excess
 
-        l_rpm = left.update(dt, l_target)
-        r_rpm = right.update(dt, r_target)
+        l_rpm, l_out = left.update(dt, l_target)
+        r_rpm, r_out = right.update(dt, r_target)
         log.write(f"{now - start:.3f},{c},{error:.0f},{l_target:.1f},{l_rpm:.1f},"
-                  f"{r_target:.1f},{r_rpm:.1f},{base:.1f}\n")
+                  f"{r_target:.1f},{r_rpm:.1f},{base:.1f},{l_out:.3f},{r_out:.3f},{int(i_reset)}\n")
 finally:
     left.motor.stop()
     right.motor.stop()
