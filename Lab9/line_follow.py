@@ -25,6 +25,8 @@ KS = 0.005        # rpm of steering per count of error
 KIS = 0           # rpm of steering per (count*s) of error, tightens long turns like the U
 KDS = 0           # D made it wobble (sensor jumps ~3000/sample), keep 0
 SETPOINT = 2000   # midpoint of white (~3700) and line (~300)
+SLOW_ERR = 3000   # error at which speed would hit 0 (before the SLOW_MIN floor)
+SLOW_MIN = 0.4    # never go below 40% of BASE_RPM in curves
 
 if len(sys.argv) < 2:
     sys.exit("Usage: line_follow.py BASE_RPM [SECONDS [KS [SETPOINT [KIS]]]]")
@@ -81,10 +83,10 @@ steer_pid = PID(KS, KIS, KDS, setpoint=SETPOINT)
 steer_pid.output_limits = (-base_rpm, base_rpm)   # keep both wheels >= 0, also caps the integral
 
 os.makedirs("follow", exist_ok=True)
-log_path = f"follow/base{base_rpm:g}_ks{KS:g}_sp{SETPOINT:g}_kis{KIS:g}.csv"
+log_path = f"follow/base{base_rpm:g}_ks{KS:g}_sp{SETPOINT:g}_kis{KIS:g}_slow.csv"
 log = open(log_path, "w")
 log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g}\n")
-log.write("time,c,error,left_target,left_rpm,right_target,right_rpm\n")
+log.write("time,c,error,left_target,left_rpm,right_target,right_rpm,base\n")
 
 start = time.monotonic()
 last_time = start
@@ -98,14 +100,17 @@ try:
 
         c = sensor.color_raw[3]
         error = c - SETPOINT                       # > 0: too much white
+        # slow down when far from the edge (sharp curve / overshoot), full speed when on it
+        base = base_rpm * max(SLOW_MIN, 1 - abs(error) / SLOW_ERR)
+        steer_pid.output_limits = (-base, base)    # keep both wheels >= 0
         steer = -EDGE * steer_pid(c, dt=dt)
-        l_target = base_rpm + steer
-        r_target = base_rpm - steer
+        l_target = base + steer
+        r_target = base - steer
 
         l_rpm = left.update(dt, l_target)
         r_rpm = right.update(dt, r_target)
         log.write(f"{now - start:.3f},{c},{error:.0f},{l_target:.1f},{l_rpm:.1f},"
-                  f"{r_target:.1f},{r_rpm:.1f}\n")
+                  f"{r_target:.1f},{r_rpm:.1f},{base:.1f}\n")
 finally:
     left.motor.stop()
     right.motor.stop()
