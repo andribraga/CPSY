@@ -25,7 +25,7 @@ STEPS = 100000
 EDGE = -1         # white on the right: too much white -> steer left (flip to 1 if it steers away)
 KS_40 = 0.0055    # rpm of steering per count of error, tuned at base 40
 KIS_40 = 0.008    # rpm of steering per (count*s) of error, tuned at base 40
-KDS = 0.0003      # D made it wobble (sensor jumps ~3000/sample), keep 0
+KDS = 0      # D made it wobble (sensor jumps ~3000/sample), keep 0
 SETPOINT = 2000   # midpoint of white (~3700) and line (~300)
 SLOW_ERR = 1500   # error at which speed would hit 0 (before the CORNER_RPM floor); 3000 wobbled in the M (corners too fast)
 SLOW_DEAD = 700   # errors below this don't slow down (straight wobble is ~±430, it kept the straights at ~85 rpm); 0 = off
