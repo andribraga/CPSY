@@ -3,6 +3,7 @@ Line follower: edge following with the color sensor + PID speed control per whee
 Setpoint is a parameter, white area on the RIGHT side of the rover.
 
 Usage: python line_follow.py BASE_RPM [SECONDS [KS [SETPOINT [KIS]]]]
+KS and KIS default to the 40 rpm tune scaled by BASE_RPM/40.
 """
 
 import os
@@ -17,21 +18,25 @@ from simple_pid import PID
 
 # ---- settings ----
 KP, KI, KD = 0.01, 0.02, 0   # wheel speed PID (best from tuning/)
-DT = 0.01          # extra sleep; sensor read adds ~0.05 s, so the loop is ~0.06 s
+DT = 0.02         # sensor runs continuously (new value every 24 ms), so the loop is ~0.025 s
 STEPS_PER_REV = 694
 STEPS = 100000
 EDGE = -1         # white on the right: too much white -> steer left (flip to 1 if it steers away)
-KS = 0.005        # rpm of steering per count of error
-KIS = 0           # rpm of steering per (count*s) of error, tightens long turns like the U
+KS_40 = 0.0055    # rpm of steering per count of error, tuned at base 40
+KIS_40 = 0.008    # rpm of steering per (count*s) of error, tuned at base 40
 KDS = 0           # D made it wobble (sensor jumps ~3000/sample), keep 0
 SETPOINT = 2000   # midpoint of white (~3700) and line (~300)
 SLOW_ERR = 3000   # error at which speed would hit 0 (before the SLOW_MIN floor)
 SLOW_MIN = 0.4    # never go below 40% of BASE_RPM in curves
+MAX_RPM = 220     # motors top out ~225-230 rpm at full duty (tuning/L300_R300)
 
 if len(sys.argv) < 2:
     sys.exit("Usage: line_follow.py BASE_RPM [SECONDS [KS [SETPOINT [KIS]]]]")
 base_rpm = float(sys.argv[1])
 run_time = float(sys.argv[2]) if len(sys.argv) > 2 else 10
+# steering in rpm must scale with speed to keep the same curve radius
+KS = KS_40 * base_rpm / 40
+KIS = KIS_40 * base_rpm / 40
 if len(sys.argv) > 3:
     KS = float(sys.argv[3])
 if len(sys.argv) > 4:
@@ -42,6 +47,8 @@ if len(sys.argv) > 5:
 sensor = adafruit_tcs34725.TCS34725(board.I2C())
 sensor.integration_time = 24
 sensor.gain = 4
+# keep it integrating; otherwise every color_raw powers it on and waits ~2 cycles (~45 ms)
+sensor.active = True
 
 input("Put the rover at the start, press Enter to drive")
 
@@ -83,7 +90,7 @@ steer_pid = PID(KS, KIS, KDS, setpoint=SETPOINT)
 steer_pid.output_limits = (-base_rpm, base_rpm)   # keep both wheels >= 0, also caps the integral
 
 os.makedirs("follow", exist_ok=True)
-log_path = f"follow/base{base_rpm:g}_ks{KS:g}_sp{SETPOINT:g}_kis{KIS:g}_slow.csv"
+log_path = f"follow/base{base_rpm:g}_ks{KS:g}_sp{SETPOINT:g}_kis{KIS:g}_fast.csv"
 log = open(log_path, "w")
 log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g}\n")
 log.write("time,c,error,left_target,left_rpm,right_target,right_rpm,base\n")
@@ -106,6 +113,11 @@ try:
         steer = -EDGE * steer_pid(c, dt=dt)
         l_target = base + steer
         r_target = base - steer
+        # outer wheel can't go past MAX_RPM: shift both down so the speed difference (the turn) is kept
+        excess = max(l_target, r_target) - MAX_RPM
+        if excess > 0:
+            l_target -= excess
+            r_target -= excess
 
         l_rpm = left.update(dt, l_target)
         r_rpm = right.update(dt, r_target)
