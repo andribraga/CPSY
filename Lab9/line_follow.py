@@ -18,7 +18,7 @@ from simple_pid import PID
 
 # ---- settings ----
 KP, KI, KD = 0.01, 0.02, 0   # wheel speed PID (best from tuning/)
-INTEGRATION_MS = 24  # sensor window; 12 halves sensor delay (keep gain 4: 12 ms saturates at 5120 counts)
+INTEGRATION_MS = 12  # sensor window; 12 halves sensor delay (keep gain 4: 12 ms saturates at 5120 counts)
 DT = 0.02 * INTEGRATION_MS / 24   # loop sleep follows the sensor: ~0.025 s loop at 24 ms, ~0.013 s at 12 ms
 STEPS_PER_REV = 694
 STEPS = 100000
@@ -31,7 +31,7 @@ SLOW_ERR = 3000   # error at which speed would hit 0 (before the SLOW_MIN floor)
 SLOW_MIN = 0.4    # never go below 40% of BASE_RPM in curves
 SLOW_TURN = 9999   # steering of SLOW_TURN * BASE_RPM gives the minimum speed (keeps it slow for the whole curve)
 MAX_RPM = 220     # motors top out ~225-230 rpm at full duty (tuning/L300_R300)
-RESET_ERR = 1200   # clear the steering I term when it fights an error bigger than this (c < 1500 or > 2500); 99999 = off
+RESET_ERR = 1200   # clear the steering I term when it fights an error bigger than this (c < 800 or > 3200); 99999 = off
 BRAKE_MARGIN = 20 # brake only if a wheel is this many rpm above target (rpm noise is ~±9); 9999 = off
 
 if len(sys.argv) < 2:
@@ -105,7 +105,7 @@ steer_pid = PID(KS, KIS, KDS, setpoint=SETPOINT)
 steer_pid.output_limits = (-base_rpm, base_rpm)   # keep both wheels >= 0, also caps the integral
 
 os.makedirs("follow", exist_ok=True)
-log_path = f"follow/base{base_rpm:g}_ks{KS:.3g}_sp{SETPOINT:g}_kis{KIS:.3g}_it{INTEGRATION_MS:g}_turn.csv"
+log_path = f"follow/base{base_rpm:g}_ks{KS:.3g}_sp{SETPOINT:g}_kis{KIS:.3g}_it{INTEGRATION_MS:g}_{time.strftime('%H%M%S')}.csv"   # time: reruns don't overwrite
 log = open(log_path, "w")
 log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g} integration_ms={INTEGRATION_MS:g}\n")
 log.write("time,c,error,left_target,left_rpm,right_target,right_rpm,base,left_out,right_out,i_reset,steer\n")
