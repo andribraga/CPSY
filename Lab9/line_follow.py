@@ -1,8 +1,8 @@
 """
 Line follower: edge following with the color sensor + PID speed control per wheel.
-Fixed setpoint c=2800, white area on the RIGHT side of the rover.
+Setpoint is a parameter, white area on the RIGHT side of the rover.
 
-Usage: python follow.py BASE_RPM [SECONDS [KS]]
+Usage: python line_follow.py BASE_RPM [SECONDS [KS [SETPOINT]]]
 """
 
 import os
@@ -16,20 +16,23 @@ from gpiozero import DigitalOutputDevice, Motor
 from simple_pid import PID
 
 # ---- settings ----
-KP, KI, KD = 0.01, 0.02, 0   # wheel speed PID (from drive.py)
+KP, KI, KD = 0.01, 0.02, 0   # wheel speed PID (best from tuning/)
 DT = 0.05
 STEPS_PER_REV = 694
 STEPS = 100000
 EDGE = -1         # white on the right: too much white -> steer left (flip to 1 if it steers away)
-KS = 0.01         # rpm of steering per count of error
-SETPOINT = 2800
+KS = 0.005        # rpm of steering per count of error
+SETPOINT = 2200
+MAX_ERR = 1000    # clamp so one outlier reading can't saturate steering
 
 if len(sys.argv) < 2:
-    sys.exit("Usage: follow.py BASE_RPM [SECONDS [KS]]")
+    sys.exit("Usage: line_follow.py BASE_RPM [SECONDS [KS [SETPOINT]]]")
 base_rpm = float(sys.argv[1])
 run_time = float(sys.argv[2]) if len(sys.argv) > 2 else 10
 if len(sys.argv) > 3:
     KS = float(sys.argv[3])
+if len(sys.argv) > 4:
+    SETPOINT = float(sys.argv[4])
 
 sensor = adafruit_tcs34725.TCS34725(board.I2C())
 sensor.integration_time = 24
@@ -71,9 +74,9 @@ right = Wheel(Motor(forward=20, backward=16), "rotary@12")
 slp = DigitalOutputDevice(5, initial_value=True)
 
 os.makedirs("follow", exist_ok=True)
-log_path = f"follow/base{base_rpm:g}_ks{KS:g}.csv"
+log_path = f"follow/base{base_rpm:g}_ks{KS:g}_sp{SETPOINT:g}.csv"
 log = open(log_path, "w")
-log.write(f"# setpoint={SETPOINT}\n")
+log.write(f"# setpoint={SETPOINT:g} ks={KS:g}\n")
 log.write("time,c,error,left_target,left_rpm,right_target,right_rpm\n")
 
 start = time.monotonic()
@@ -88,7 +91,7 @@ try:
 
         c = sensor.color_raw[3]
         error = c - SETPOINT                       # > 0: too much white
-        steer = EDGE * KS * error
+        steer = EDGE * KS * max(-MAX_ERR, min(MAX_ERR, error))
         steer = max(-base_rpm, min(base_rpm, steer))   # keep both wheels >= 0
         l_target = base_rpm + steer
         r_target = base_rpm - steer
