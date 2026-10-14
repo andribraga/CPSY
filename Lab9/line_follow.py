@@ -29,7 +29,8 @@ SETPOINT = 2000   # midpoint of white (~3700) and line (~300)
 SLOW_ERR = 3000   # error at which speed would hit 0 (before the SLOW_MIN floor)
 SLOW_MIN = 0.4    # never go below 40% of BASE_RPM in curves
 MAX_RPM = 220     # motors top out ~225-230 rpm at full duty (tuning/L300_R300)
-RESET_ERR = 1200  # clear the steering I term when it fights an error bigger than this (c < 800 or > 3200)
+RESET_ERR = 1200  # clear the steering I term when it fights an error bigger than this (c < 800 or > 3200); 99999 = off
+BRAKE_MARGIN = 20 # brake only if a wheel is this many rpm above target (rpm noise is ~±9); 9999 = off
 
 if len(sys.argv) < 2:
     sys.exit("Usage: line_follow.py BASE_RPM [SECONDS [KS [SETPOINT [KIS]]]]")
@@ -62,7 +63,7 @@ class Wheel:
         self.motor = motor
         self.enc = devices[encoder_name]
         self.pid = PID(KP, KI, KD, setpoint=0)
-        self.pid.output_limits = (-1, 1)   # < 0 = brake
+        self.pid.output_limits = (0, 1)
         self.last_pos = self.position()
 
     def position(self):
@@ -79,13 +80,14 @@ class Wheel:
         self.last_pos = pos
         rpm = abs(d) / STEPS_PER_REV / dt * 60
         out = self.pid(rpm, dt=dt)
-        if out >= 0:
-            self.motor.forward(out)
-        else:
-            # wheel too fast: DRV8833 short brake (IN1 = IN2 = high); coasting at 0 duty is too slow
+        if rpm > target_rpm + BRAKE_MARGIN:
+            # wheel clearly too fast: DRV8833 short brake (IN1 = IN2 = high); coasting at 0 duty is too slow
             # ponytail: on/off brake, make it proportional if it chatters
             self.motor.forward_device.on()
             self.motor.backward_device.on()
+            out = -1
+        else:
+            self.motor.forward(out)
         return rpm, out
 
 
