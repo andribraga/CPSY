@@ -29,6 +29,7 @@ KDS = 0           # D made it wobble (sensor jumps ~3000/sample), keep 0
 SETPOINT = 2000   # midpoint of white (~3700) and line (~300)
 SLOW_ERR = 2000   # error at which speed would hit 0 (before the SLOW_MIN floor); 3000 wobbled in the M (corners too fast)
 SLOW_MIN = 0.4    # never go below 40% of BASE_RPM in curves
+SLOW_RECOVER = 1.0 # speed drops instantly but climbs back at most this * BASE_RPM per second (stops 40<->95 rpm surging in corners); 9999 = off
 SLOW_TURN = 9999   # steering of SLOW_TURN * BASE_RPM gives the minimum speed (keeps it slow for the whole curve)
 MAX_RPM = 220     # motors top out ~225-230 rpm at full duty (tuning/L300_R300)
 RESET_ERR = 1200   # clear the steering I term when it fights an error bigger than this (c < 800 or > 3200); 99999 = off
@@ -107,12 +108,13 @@ steer_pid.output_limits = (-base_rpm, base_rpm)   # keep both wheels >= 0, also 
 os.makedirs("follow", exist_ok=True)
 log_path = f"follow/base{base_rpm:g}_ks{KS:.3g}_sp{SETPOINT:g}_kis{KIS:.3g}_it{INTEGRATION_MS:g}_{time.strftime('%H%M%S')}.csv"   # time: reruns don't overwrite
 log = open(log_path, "w")
-log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g} integration_ms={INTEGRATION_MS:g}\n")
+log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g} integration_ms={INTEGRATION_MS:g} slow_err={SLOW_ERR:g} slow_recover={SLOW_RECOVER:g}\n")
 log.write("time,c,error,left_target,left_rpm,right_target,right_rpm,base,left_out,right_out,i_reset,steer\n")
 
 start = time.monotonic()
 last_time = start
 steer = 0.0
+base = base_rpm
 
 try:
     while time.monotonic() - start < run_time:
@@ -126,7 +128,7 @@ try:
         # slow down while turning hard (last steer includes I, so it stays slow through the whole curve,
         # also when c passes the setpoint mid-curve) or when far off the edge (overshoot)
         slow = min(1 - abs(steer) / (SLOW_TURN * base_rpm), 1 - abs(error) / SLOW_ERR)
-        base = base_rpm * max(SLOW_MIN, slow)
+        base = min(base_rpm * max(SLOW_MIN, slow), base + SLOW_RECOVER * base_rpm * dt)
         steer_pid.output_limits = (-base, base)    # keep both wheels >= 0
         # I term is stored as KIS * (SETPOINT - c), so i * error > 0 means it steers against the sensor
         _, i_term, _ = steer_pid.components
