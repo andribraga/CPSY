@@ -29,7 +29,7 @@ KDS = 0           # D made it wobble (sensor jumps ~3000/sample), keep 0
 SETPOINT = 2000   # midpoint of white (~3700) and line (~300)
 SLOW_ERR = 3000   # error at which speed would hit 0 (before the SLOW_MIN floor)
 SLOW_MIN = 0.4    # never go below 40% of BASE_RPM in curves
-SLOW_TURN = 0.5   # steering of SLOW_TURN * BASE_RPM gives the minimum speed (keeps it slow for the whole curve)
+SLOW_TURN = 9999   # steering of SLOW_TURN * BASE_RPM gives the minimum speed (keeps it slow for the whole curve)
 MAX_RPM = 220     # motors top out ~225-230 rpm at full duty (tuning/L300_R300)
 RESET_ERR = 1200   # clear the steering I term when it fights an error bigger than this (c < 1500 or > 2500); 99999 = off
 BRAKE_MARGIN = 20 # brake only if a wheel is this many rpm above target (rpm noise is ~±9); 9999 = off
