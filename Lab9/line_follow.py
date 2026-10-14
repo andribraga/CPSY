@@ -3,7 +3,7 @@ Line follower: edge following with the color sensor + PID speed control per whee
 Setpoint is a parameter, white area on the RIGHT side of the rover.
 
 Usage: python line_follow.py BASE_RPM [SECONDS [KS [SETPOINT [KIS]]]]
-KS and KIS default to the 40 rpm tune scaled by BASE_RPM/40.
+KS and KIS default to the 40 rpm tune scaled by (BASE_RPM/40)**0.6.
 """
 
 import os
@@ -36,9 +36,11 @@ if len(sys.argv) < 2:
     sys.exit("Usage: line_follow.py BASE_RPM [SECONDS [KS [SETPOINT [KIS]]]]")
 base_rpm = float(sys.argv[1])
 run_time = float(sys.argv[2]) if len(sys.argv) > 2 else 10
-# steering in rpm must scale with speed to keep the same curve radius
-KS = KS_40 * base_rpm / 40
-KIS = KIS_40 * base_rpm / 40
+# steering grows slower than speed: the sensor-to-wheel delay costs more at speed
+# (linear scaling overshot at 100; 0.0095 at 100 vs 0.0055 at 40 fits ^0.6)
+scale = (base_rpm / 40) ** 0.6
+KS = KS_40 * scale
+KIS = KIS_40 * scale
 if len(sys.argv) > 3:
     KS = float(sys.argv[3])
 if len(sys.argv) > 4:
