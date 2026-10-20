@@ -32,7 +32,9 @@ SLOW_DEAD = 800   # errors below this don't slow down (straight wobble is ~±430
 CORNER_RPM = 50   # floor speed in curves, in rpm (not % of BASE_RPM): the M takes ~half the lap at this speed; 40 held, back to 40 if it loses a corner
 SLOW_RECOVER = 150 # speed climbs back at most this many rpm per second (stops 40<->95 rpm surging in corners); 99999 = off
 SLOW_DROP = 99999 # speed falls at most this many rpm per second; 400 lost the first M corner at 150; 600/800 entered corners at 110-165 rpm and lost them (the straight stutter was the brake, fixed by BRAKE_MARGIN); 99999 = off
-HOLD_SLOW = 1     # 1: don't speed back up while |error| > SLOW_DEAD (the curve after the first black dip sped up to ~100 on the white side and was lost); 0 = off
+FAST_RECOVER = 400 # rpm/s climb on straights: |error| < FAST_ERR for FAST_SAMPLES in a row; 150 never reached 180 on the 0.5-1 s straights
+FAST_ERR = 400    # straight-line wobble is ~±400; curves sit at 800-1400 and keep SLOW_RECOVER (faster recovery there lost the turn)
+FAST_SAMPLES = 3  # samples on the edge before FAST_RECOVER; 1 let the curve after the first black dip speed up to ~88 (missed runs lost it at 79-99)
 SLOW_SAMPLES = 1  # slow down on the smallest |error| of the last N samples (ignores short spikes on straights); 3 and 2 both missed a turn, so off; 1 = off
 SLOW_TURN = 9999   # steering of SLOW_TURN * BASE_RPM gives the minimum speed (keeps it slow for the whole curve)
 MAX_RPM = 220     # motors top out ~225-230 rpm at full duty (tuning/L300_R300)
@@ -114,7 +116,7 @@ steer_pid.output_limits = (-base_rpm, base_rpm)   # keep both wheels >= 0, also 
 os.makedirs("follow", exist_ok=True)
 log_path = f"follow/base{base_rpm:g}_ks{KS:.3g}_sp{SETPOINT:g}_kis{KIS:.3g}_kds{KDS:g}_cr{CORNER_RPM:g}_it{INTEGRATION_MS:g}_{time.strftime('%H%M%S')}.csv"   # time: reruns don't overwrite
 log = open(log_path, "w")
-log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g} kds={KDS:g} integration_ms={INTEGRATION_MS:g} slow_err={SLOW_ERR:g} slow_dead={SLOW_DEAD:g} slow_recover={SLOW_RECOVER:g} slow_drop={SLOW_DROP:g} slow_samples={SLOW_SAMPLES:g} hold_slow={HOLD_SLOW:g} brake_margin={BRAKE_MARGIN:g} corner_rpm={CORNER_RPM:g}\n")
+log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g} kds={KDS:g} integration_ms={INTEGRATION_MS:g} slow_err={SLOW_ERR:g} slow_dead={SLOW_DEAD:g} slow_recover={SLOW_RECOVER:g} slow_drop={SLOW_DROP:g} slow_samples={SLOW_SAMPLES:g} fast_recover={FAST_RECOVER:g} fast_err={FAST_ERR:g} fast_samples={FAST_SAMPLES:g} brake_margin={BRAKE_MARGIN:g} corner_rpm={CORNER_RPM:g}\n")
 log.write("time,c,error,left_target,left_rpm,right_target,right_rpm,base,left_out,right_out,i_reset,steer\n")
 
 start = time.monotonic()
@@ -122,6 +124,7 @@ last_time = start
 steer = 0.0
 base = base_rpm
 recent_err = []
+on_edge = 0       # samples in a row with |error| < FAST_ERR
 
 try:
     while time.monotonic() - start < run_time:
@@ -138,7 +141,8 @@ try:
         slow_error = min(recent_err)
         slow = min(1 - abs(steer) / (SLOW_TURN * base_rpm), 1 - max(0, slow_error - SLOW_DEAD) / (SLOW_ERR - SLOW_DEAD))
         target_base = min(base_rpm, max(CORNER_RPM, base_rpm * slow))   # min: base_rpm below CORNER_RPM still works
-        recover = 0 if HOLD_SLOW and abs(error) > SLOW_DEAD else SLOW_RECOVER * dt   # still off the edge: keep the speed
+        on_edge = on_edge + 1 if abs(error) < FAST_ERR else 0
+        recover = (FAST_RECOVER if on_edge >= FAST_SAMPLES else SLOW_RECOVER) * dt
         base = max(min(target_base, base + recover), base - SLOW_DROP * dt)
         steer_pid.output_limits = (-base, base)    # keep both wheels >= 0
         # I term is stored as KIS * (SETPOINT - c), so i * error > 0 means it steers against the sensor
