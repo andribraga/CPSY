@@ -32,6 +32,7 @@ SLOW_DEAD = 800   # errors below this don't slow down (straight wobble is ~±430
 CORNER_RPM = 50   # floor speed in curves, in rpm (not % of BASE_RPM): the M takes ~half the lap at this speed; 40 held, back to 40 if it loses a corner
 SLOW_RECOVER = 150 # speed climbs back at most this many rpm per second (stops 40<->95 rpm surging in corners); 99999 = off
 SLOW_DROP = 99999 # speed falls at most this many rpm per second; 400 lost the first M corner at 150; 600/800 entered corners at 110-165 rpm and lost them (the straight stutter was the brake, fixed by BRAKE_MARGIN); 99999 = off
+SLOW_SAMPLES = 3  # slow down on the smallest |error| of the last N samples: 1-2 sample spikes on straights (quick stops) are ignored, corners (8+ samples) still slow ~2 samples later; 1 = off
 SLOW_TURN = 9999   # steering of SLOW_TURN * BASE_RPM gives the minimum speed (keeps it slow for the whole curve)
 MAX_RPM = 220     # motors top out ~225-230 rpm at full duty (tuning/L300_R300)
 RESET_ERR = 1200   # clear the steering I term when it fights an error bigger than this (c < 800 or > 3200); 99999 = off
@@ -112,13 +113,14 @@ steer_pid.output_limits = (-base_rpm, base_rpm)   # keep both wheels >= 0, also 
 os.makedirs("follow", exist_ok=True)
 log_path = f"follow/base{base_rpm:g}_ks{KS:.3g}_sp{SETPOINT:g}_kis{KIS:.3g}_kds{KDS:g}_cr{CORNER_RPM:g}_it{INTEGRATION_MS:g}_{time.strftime('%H%M%S')}.csv"   # time: reruns don't overwrite
 log = open(log_path, "w")
-log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g} kds={KDS:g} integration_ms={INTEGRATION_MS:g} slow_err={SLOW_ERR:g} slow_dead={SLOW_DEAD:g} slow_recover={SLOW_RECOVER:g} slow_drop={SLOW_DROP:g} corner_rpm={CORNER_RPM:g}\n")
+log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g} kds={KDS:g} integration_ms={INTEGRATION_MS:g} slow_err={SLOW_ERR:g} slow_dead={SLOW_DEAD:g} slow_recover={SLOW_RECOVER:g} slow_drop={SLOW_DROP:g} slow_samples={SLOW_SAMPLES:g} brake_margin={BRAKE_MARGIN:g} corner_rpm={CORNER_RPM:g}\n")
 log.write("time,c,error,left_target,left_rpm,right_target,right_rpm,base,left_out,right_out,i_reset,steer\n")
 
 start = time.monotonic()
 last_time = start
 steer = 0.0
 base = base_rpm
+recent_err = []
 
 try:
     while time.monotonic() - start < run_time:
@@ -131,7 +133,9 @@ try:
         error = c - SETPOINT                       # > 0: too much white
         # slow down while turning hard (last steer includes I, so it stays slow through the whole curve,
         # also when c passes the setpoint mid-curve) or when far off the edge (overshoot)
-        slow = min(1 - abs(steer) / (SLOW_TURN * base_rpm), 1 - max(0, abs(error) - SLOW_DEAD) / (SLOW_ERR - SLOW_DEAD))
+        recent_err = (recent_err + [abs(error)])[-SLOW_SAMPLES:]
+        slow_error = min(recent_err)
+        slow = min(1 - abs(steer) / (SLOW_TURN * base_rpm), 1 - max(0, slow_error - SLOW_DEAD) / (SLOW_ERR - SLOW_DEAD))
         target_base = min(base_rpm, max(CORNER_RPM, base_rpm * slow))   # min: base_rpm below CORNER_RPM still works
         base = max(min(target_base, base + SLOW_RECOVER * dt), base - SLOW_DROP * dt)
         steer_pid.output_limits = (-base, base)    # keep both wheels >= 0
