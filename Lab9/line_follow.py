@@ -25,7 +25,7 @@ STEPS = 100000
 EDGE = -1         # white on the right: too much white -> steer left (flip to 1 if it steers away)
 KS_40 = 0.0055    # rpm of steering per count of error, tuned at base 40
 KIS_40 = 0.008    # rpm of steering per (count*s) of error, tuned at base 40
-KDS = 0      # D made it wobble (sensor jumps ~3000/sample), keep 0
+KDS = 0.0001      # damps the straight-line weave with the sensor 60 mm forward; 0.0002 twitched; 0 = off (wobbled at 25 rpm / 24 ms)
 SETPOINT = 2000   # midpoint of white (~3700) and line (~300)
 SLOW_ERR = 1500   # error at which speed would hit 0 (before the CORNER_RPM floor); 3000 wobbled in the M (corners too fast)
 SLOW_DEAD = 600   # errors below this don't slow down (straight wobble is ~±430, it kept the straights at ~85 rpm); 0 = off
@@ -108,7 +108,7 @@ steer_pid = PID(KS, KIS, KDS, setpoint=SETPOINT)
 steer_pid.output_limits = (-base_rpm, base_rpm)   # keep both wheels >= 0, also caps the integral
 
 os.makedirs("follow", exist_ok=True)
-log_path = f"follow/base{base_rpm:g}_ks{KS:.3g}_sp{SETPOINT:g}_kis{KIS:.3g}_it{INTEGRATION_MS:g}_{time.strftime('%H%M%S')}.csv"   # time: reruns don't overwrite
+log_path = f"follow/base{base_rpm:g}_ks{KS:.3g}_sp{SETPOINT:g}_kis{KIS:.3g}_kds{KDS:g}_it{INTEGRATION_MS:g}_{time.strftime('%H%M%S')}.csv"   # time: reruns don't overwrite
 log = open(log_path, "w")
 log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g} kds={KDS:g} integration_ms={INTEGRATION_MS:g} slow_err={SLOW_ERR:g} slow_dead={SLOW_DEAD:g} slow_recover={SLOW_RECOVER:g} slow_drop={SLOW_DROP:g} corner_rpm={CORNER_RPM:g}\n")
 log.write("time,c,error,left_target,left_rpm,right_target,right_rpm,base,left_out,right_out,i_reset,steer\n")
