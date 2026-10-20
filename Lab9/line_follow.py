@@ -31,7 +31,7 @@ SLOW_ERR = 1500   # error at which speed would hit 0 (before the CORNER_RPM floo
 SLOW_DEAD = 800   # errors below this don't slow down (straight wobble is ~±430, it kept the straights at ~85 rpm); 0 = off
 CORNER_RPM = 50   # floor speed in curves, in rpm (not % of BASE_RPM): the M takes ~half the lap at this speed; 40 held, back to 40 if it loses a corner
 SLOW_RECOVER = 150 # speed climbs back at most this many rpm per second (stops 40<->95 rpm surging in corners); 99999 = off
-SLOW_DROP = 99999 # speed falls at most this many rpm per second; 400 lost the first M corner at 150 (entered at ~130, crossed the line in 0.1 s); 99999 = off
+SLOW_DROP = 800 # speed falls at most this many rpm per second; 400 lost the first M corner at 150 (entered at ~130, crossed the line in 0.1 s); 99999 = off
 SLOW_TURN = 9999   # steering of SLOW_TURN * BASE_RPM gives the minimum speed (keeps it slow for the whole curve)
 MAX_RPM = 220     # motors top out ~225-230 rpm at full duty (tuning/L300_R300)
 RESET_ERR = 1200   # clear the steering I term when it fights an error bigger than this (c < 800 or > 3200); 99999 = off
