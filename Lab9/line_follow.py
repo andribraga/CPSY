@@ -1,9 +1,9 @@
 """
 Line follower: edge following with the color sensor + PID speed control per wheel.
-Setpoint is a parameter, white area on the RIGHT side of the rover.
+White area on the RIGHT side of the rover.
 
-Usage: python line_follow.py BASE_RPM [SECONDS [KS [SETPOINT [KIS [CORNER_RPM]]]]]
-KS defaults to the 40 rpm tune scaled by (BASE_RPM/40)**0.6, KIS by (BASE_RPM/40)**0.5.
+Usage: python line_follow.py BASE_RPM SECONDS KS SETPOINT KIS CORNER_RPM
+Best run so far (sensor 60 mm forward, follow/..._192349.csv): python line_follow.py 180 20 0.0115 2000 0.01 50
 """
 
 import os
@@ -17,50 +17,35 @@ from gpiozero import DigitalOutputDevice, Motor
 from simple_pid import PID
 
 # ---- settings ----
-KP, KI, KD = 0.01, 0.02, 0   # wheel speed PID (best from tuning/)
+KP, KI = 0.01, 0.02   # wheel speed PI (best from tuning/, D off)
 INTEGRATION_MS = 12  # sensor window; 12 halves sensor delay (keep gain 4: 12 ms saturates at 5120 counts)
 DT = 0.02 * INTEGRATION_MS / 24   # loop sleep follows the sensor: ~0.025 s loop at 24 ms, ~0.013 s at 12 ms
 STEPS_PER_REV = 694
 STEPS = 100000
 EDGE = -1         # white on the right: too much white -> steer left (flip to 1 if it steers away)
-KS_40 = 0.0055    # rpm of steering per count of error, tuned at base 40
-KIS_40 = 0.008    # rpm of steering per (count*s) of error, tuned at base 40
-KDS = 0      # damps the straight-line weave with the sensor 60 mm forward; 0.0002 twitched; 0 = off (wobbled at 25 rpm / 24 ms)
-SETPOINT = 2000   # midpoint of white (~3700) and line (~300)
 SLOW_ERR = 1500   # error at which speed would hit 0 (before the CORNER_RPM floor); 3000 wobbled in the M (corners too fast)
 SLOW_DEAD = 800   # errors below this don't slow down (straight wobble is ~±430, it kept the straights at ~85 rpm); 0 = off
-CORNER_RPM = 50   # floor speed in curves, in rpm (not % of BASE_RPM): the M takes ~half the lap at this speed; 40 held, back to 40 if it loses a corner
 SLOW_RECOVER = 150 # speed climbs back at most this many rpm per second (stops 40<->95 rpm surging in corners); 99999 = off
-SLOW_DROP = 99999 # speed falls at most this many rpm per second; 400 lost the first M corner at 150; 600/800 entered corners at 110-165 rpm and lost them (the straight stutter was the brake, fixed by BRAKE_MARGIN); 99999 = off
-SLOW_SAMPLES = 1  # slow down on the smallest |error| of the last N samples (ignores short spikes on straights); 3 and 2 both missed a turn, so off; 1 = off
-SLOW_TURN = 9999   # steering of SLOW_TURN * BASE_RPM gives the minimum speed (keeps it slow for the whole curve)
 MAX_RPM = 220     # motors top out ~225-230 rpm at full duty (tuning/L300_R300)
 RESET_ERR = 1200   # clear the steering I term when it fights an error bigger than this (c < 800 or > 3200); 99999 = off
 BRAKE_MARGIN = 70 # brake only if a wheel is this many rpm above target (rpm noise is ~±9); 9999 = off
 
-if len(sys.argv) < 2:
-    sys.exit("Usage: line_follow.py BASE_RPM [SECONDS [KS [SETPOINT [KIS [CORNER_RPM]]]]]")
-base_rpm = float(sys.argv[1])
-run_time = float(sys.argv[2]) if len(sys.argv) > 2 else 10
-# steering grows slower than speed: the sensor-to-wheel delay costs more at speed
-# (linear scaling overshot at 100; 0.0095 at 100 vs 0.0055 at 40 fits ^0.6)
-KS = KS_40 * (base_rpm / 40) ** 0.6
-KIS = KIS_40 * (base_rpm / 40) ** 0.5   # I kept steering past the edge at 100, so it grows slower than P
-if len(sys.argv) > 3:
-    KS = float(sys.argv[3])
-if len(sys.argv) > 4:
-    SETPOINT = float(sys.argv[4])
-if len(sys.argv) > 5:
-    KIS = float(sys.argv[5])
-if len(sys.argv) > 6:
-    CORNER_RPM = float(sys.argv[6])
+# KS: rpm of steering per count of error, KIS: per (count*s), SETPOINT: clear count on the edge (2000),
+# CORNER_RPM: floor speed in curves, in rpm (50 holds; 55 held 1 of 3 runs; 60+ not tested yet)
+USAGE = "Usage: line_follow.py BASE_RPM SECONDS KS SETPOINT KIS CORNER_RPM   e.g. 180 20 0.0115 2000 0.01 50"
+if len(sys.argv) != 7:
+    sys.exit(USAGE)
+try:
+    base_rpm, run_time, KS, SETPOINT, KIS, CORNER_RPM = map(float, sys.argv[1:])
+except ValueError:
+    sys.exit(USAGE)
 
 sensor = adafruit_tcs34725.TCS34725(board.I2C())
 sensor.integration_time = INTEGRATION_MS
 sensor.gain = 4
 # keep it integrating; otherwise every color_raw powers it on and waits ~2 cycles (~45 ms)
 sensor.active = True
-# scale counts back to 24 ms so SETPOINT, KS, KIS, RESET_ERR, SLOW_ERR stay valid at any integration time
+# scale counts back to 24 ms so SETPOINT, KS, KIS, RESET_ERR, SLOW_ERR, SLOW_DEAD stay valid at any integration time
 C_SCALE = 24 / sensor.integration_time
 
 input("Put the rover at the start, press Enter to drive")
@@ -73,7 +58,7 @@ class Wheel:
     def __init__(self, motor, encoder_name):
         self.motor = motor
         self.enc = devices[encoder_name]
-        self.pid = PID(KP, KI, KD, setpoint=0)
+        self.pid = PID(KP, KI, 0, setpoint=0)
         self.pid.output_limits = (0, 1)
         self.last_pos = self.position()
 
@@ -106,21 +91,20 @@ left = Wheel(Motor(forward=19, backward=26), "rotary@6")
 right = Wheel(Motor(forward=20, backward=16), "rotary@12")
 slp = DigitalOutputDevice(5, initial_value=True)
 
-# steering PI; simple_pid uses setpoint - c, so -EDGE keeps the same direction as EDGE * (c - SETPOINT)
-steer_pid = PID(KS, KIS, KDS, setpoint=SETPOINT)
+# steering PI (D tried, made it twitch); simple_pid uses setpoint - c, so -EDGE keeps the same direction as EDGE * (c - SETPOINT)
+steer_pid = PID(KS, KIS, 0, setpoint=SETPOINT)
 steer_pid.output_limits = (-base_rpm, base_rpm)   # keep both wheels >= 0, also caps the integral
 
 os.makedirs("follow", exist_ok=True)
-log_path = f"follow/base{base_rpm:g}_ks{KS:.3g}_sp{SETPOINT:g}_kis{KIS:.3g}_kds{KDS:g}_cr{CORNER_RPM:g}_it{INTEGRATION_MS:g}_{time.strftime('%H%M%S')}.csv"   # time: reruns don't overwrite
+log_path = f"follow/base{base_rpm:g}_ks{KS:.3g}_sp{SETPOINT:g}_kis{KIS:.3g}_cr{CORNER_RPM:g}_it{INTEGRATION_MS:g}_{time.strftime('%H%M%S')}.csv"   # time: reruns don't overwrite
 log = open(log_path, "w")
-log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g} kds={KDS:g} integration_ms={INTEGRATION_MS:g} slow_err={SLOW_ERR:g} slow_dead={SLOW_DEAD:g} slow_recover={SLOW_RECOVER:g} slow_drop={SLOW_DROP:g} slow_samples={SLOW_SAMPLES:g} brake_margin={BRAKE_MARGIN:g} corner_rpm={CORNER_RPM:g}\n")
+log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g} integration_ms={INTEGRATION_MS:g} slow_err={SLOW_ERR:g} slow_dead={SLOW_DEAD:g} slow_recover={SLOW_RECOVER:g} reset_err={RESET_ERR:g} brake_margin={BRAKE_MARGIN:g} corner_rpm={CORNER_RPM:g}\n")
 log.write("time,c,error,left_target,left_rpm,right_target,right_rpm,base,left_out,right_out,i_reset,steer\n")
 
 start = time.monotonic()
 last_time = start
 steer = 0.0
 base = base_rpm
-recent_err = []
 
 try:
     while time.monotonic() - start < run_time:
@@ -131,13 +115,11 @@ try:
 
         c = round(sensor.color_raw[3] * C_SCALE)
         error = c - SETPOINT                       # > 0: too much white
-        # slow down while turning hard (last steer includes I, so it stays slow through the whole curve,
-        # also when c passes the setpoint mid-curve) or when far off the edge (overshoot)
-        recent_err = (recent_err + [abs(error)])[-SLOW_SAMPLES:]
-        slow_error = min(recent_err)
-        slow = min(1 - abs(steer) / (SLOW_TURN * base_rpm), 1 - max(0, slow_error - SLOW_DEAD) / (SLOW_ERR - SLOW_DEAD))
+        # slow down when far off the edge (curve or overshoot): drop at once, climb back at SLOW_RECOVER
+        # (tried and dropped: limiting the drop rate, ignoring short spikes, holding speed in curves; all lost the curve after the first black dip)
+        slow = 1 - max(0, abs(error) - SLOW_DEAD) / (SLOW_ERR - SLOW_DEAD)
         target_base = min(base_rpm, max(CORNER_RPM, base_rpm * slow))   # min: base_rpm below CORNER_RPM still works
-        base = max(min(target_base, base + SLOW_RECOVER * dt), base - SLOW_DROP * dt)
+        base = min(target_base, base + SLOW_RECOVER * dt)
         steer_pid.output_limits = (-base, base)    # keep both wheels >= 0
         # I term is stored as KIS * (SETPOINT - c), so i * error > 0 means it steers against the sensor
         _, i_term, _ = steer_pid.components
