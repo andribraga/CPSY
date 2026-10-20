@@ -2,7 +2,7 @@
 Line follower: edge following with the color sensor + PID speed control per wheel.
 Setpoint is a parameter, white area on the RIGHT side of the rover.
 
-Usage: python line_follow.py BASE_RPM [SECONDS [KS [SETPOINT [KIS]]]]
+Usage: python line_follow.py BASE_RPM [SECONDS [KS [SETPOINT [KIS [CORNER_RPM]]]]]
 KS defaults to the 40 rpm tune scaled by (BASE_RPM/40)**0.6, KIS by (BASE_RPM/40)**0.5.
 """
 
@@ -38,7 +38,7 @@ RESET_ERR = 1200   # clear the steering I term when it fights an error bigger th
 BRAKE_MARGIN = 50 # brake only if a wheel is this many rpm above target (rpm noise is ~±9); 9999 = off
 
 if len(sys.argv) < 2:
-    sys.exit("Usage: line_follow.py BASE_RPM [SECONDS [KS [SETPOINT [KIS]]]]")
+    sys.exit("Usage: line_follow.py BASE_RPM [SECONDS [KS [SETPOINT [KIS [CORNER_RPM]]]]]")
 base_rpm = float(sys.argv[1])
 run_time = float(sys.argv[2]) if len(sys.argv) > 2 else 10
 # steering grows slower than speed: the sensor-to-wheel delay costs more at speed
@@ -51,6 +51,8 @@ if len(sys.argv) > 4:
     SETPOINT = float(sys.argv[4])
 if len(sys.argv) > 5:
     KIS = float(sys.argv[5])
+if len(sys.argv) > 6:
+    CORNER_RPM = float(sys.argv[6])
 
 sensor = adafruit_tcs34725.TCS34725(board.I2C())
 sensor.integration_time = INTEGRATION_MS
@@ -108,7 +110,7 @@ steer_pid = PID(KS, KIS, KDS, setpoint=SETPOINT)
 steer_pid.output_limits = (-base_rpm, base_rpm)   # keep both wheels >= 0, also caps the integral
 
 os.makedirs("follow", exist_ok=True)
-log_path = f"follow/base{base_rpm:g}_ks{KS:.3g}_sp{SETPOINT:g}_kis{KIS:.3g}_kds{KDS:g}_it{INTEGRATION_MS:g}_{time.strftime('%H%M%S')}.csv"   # time: reruns don't overwrite
+log_path = f"follow/base{base_rpm:g}_ks{KS:.3g}_sp{SETPOINT:g}_kis{KIS:.3g}_kds{KDS:g}_cr{CORNER_RPM:g}_it{INTEGRATION_MS:g}_{time.strftime('%H%M%S')}.csv"   # time: reruns don't overwrite
 log = open(log_path, "w")
 log.write(f"# setpoint={SETPOINT:g} ks={KS:g} kis={KIS:g} kds={KDS:g} integration_ms={INTEGRATION_MS:g} slow_err={SLOW_ERR:g} slow_dead={SLOW_DEAD:g} slow_recover={SLOW_RECOVER:g} slow_drop={SLOW_DROP:g} corner_rpm={CORNER_RPM:g}\n")
 log.write("time,c,error,left_target,left_rpm,right_target,right_rpm,base,left_out,right_out,i_reset,steer\n")
