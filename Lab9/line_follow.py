@@ -35,7 +35,7 @@ SLOW_DROP = 99999 # speed falls at most this many rpm per second; 400 lost the f
 SLOW_TURN = 9999   # steering of SLOW_TURN * BASE_RPM gives the minimum speed (keeps it slow for the whole curve)
 MAX_RPM = 220     # motors top out ~225-230 rpm at full duty (tuning/L300_R300)
 RESET_ERR = 1200   # clear the steering I term when it fights an error bigger than this (c < 800 or > 3200); 99999 = off
-BRAKE_MARGIN = 50 # brake only if a wheel is this many rpm above target (rpm noise is ~±9); 9999 = off
+BRAKE_MARGIN = 70 # brake only if a wheel is this many rpm above target (rpm noise is ~±9); 9999 = off
 
 if len(sys.argv) < 2:
     sys.exit("Usage: line_follow.py BASE_RPM [SECONDS [KS [SETPOINT [KIS [CORNER_RPM]]]]]")
