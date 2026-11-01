@@ -15,6 +15,9 @@ import evdev
 from evdev import ecodes
 from gpiozero import DigitalOutputDevice, Motor
 from simple_pid import PID
+import warnings
+
+warnings.filterwarnings("ignore", message="Falling back from")  # ponytail: hides gpiozero's lgpio notice; install lgpio for the real fix
 
 # ---- settings ----
 KP, KI, KD = 0.01, 0.02, 0   # wheel speed PID (best from tuning/)

@@ -18,6 +18,9 @@ import evdev
 from evdev import ecodes
 from gpiozero import DigitalOutputDevice, Motor
 from simple_pid import PID
+import warnings
+
+warnings.filterwarnings("ignore", message="Falling back from")  # ponytail: hides gpiozero's lgpio notice; install lgpio for the real fix
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "Lab8"))
 from distance_sensor import voltage  # sets up the MCP3008 (SPI) on import
